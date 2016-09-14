@@ -1,0 +1,89 @@
+#!/usr/bin/env ruby
+require 'optparse'
+require 'open-uri'
+require 'json'
+
+class ModService
+  def initialize(username, token, server = "mods.factorio.com")
+    @username = username
+    @token = token
+    @server_base_uri = URI("https://#{server}")
+  end
+
+  def mod_info(mod_names)
+    mods_uri = URI.join(@server_base_uri, "/api/mods")
+    mods_uri.query = URI.encode_www_form :page_size => 'max', :namelist => mod_names
+    puts "Connecting to #{mods_uri.host}"
+    JSON.parse(open(mods_uri).read)['results']
+  end
+
+  def download(mod_path)
+    mod_uri = URI.join(@server_base_uri, mod_path)
+    mod_uri.query = URI.encode_www_form :username => @username, :token => @token
+
+    temp_file = Tempfile.open(File.basename(mod_uri.path))
+    IO.copy_stream(open(mod_uri), temp_file)
+    temp_file
+  end
+end
+
+options = {}
+OptionParser.new do |opts|
+  opts.on("-s", "--server-settings PATH", "location of server-settings.json for username and token") do |o|
+    options[:server_settings] = File.expand_path(o)
+  end
+  opts.on("-u", "--username USERNAME", "factorio.com username instead of server-settings.json") do |o|
+    options[:username] = o
+  end
+  opts.on("-t", "--token TOKEN", "factorio.com token instead of server-settings.json") do |o|
+    options[:token] = o
+  end
+  opts.on("--mod-host SERVER", "server to query for mod data and downloads") do |o|
+    options[:mod_host] = o
+  end
+  opts.on("-p", "--path PATH", "directory to Factorio") do |o|
+    options[:base_path] = File.expand_path(o)
+  end
+  opts.on("-m", "--mods-path PATH", "location of mods dir containing mod-list.json") do |o|
+    options[:mods_path] = File.expand_path(o)
+  end
+  opts.on("-h", "--help", "Prints this help") do
+    puts opts
+    exit
+  end
+end.parse!
+
+def defaults(options)
+  options[:base_path]       ||= File.join('/', 'opt', 'factorio')
+  options[:mod_host]        ||= 'mods.factorio.com'
+  options[:mods_path]       ||= File.join(options[:base_path], 'mods')
+  options[:server_settings] ||= File.join(options[:base_path], 'data', 'server-settings.json')
+
+  if [options[:username], options[:token]].all?(&:nil?)
+    server_data = JSON.parse(File.read(options[:server_settings]))
+    options.merge!(:username => server_data['username'], :token => server_data['token'])
+  end
+  options
+end
+
+config = defaults(options)
+local_mod_data  = JSON.parse(File.read(File.join(config[:mods_path], "mod-list.json")))
+mod_names       = local_mod_data['mods'].map{|m| m['name']} - ['base']
+
+puts "Checking #{mod_names.join(', ')}"
+
+mod_service = ModService.new(config[:username], config[:token], config[:mod_host])
+mod_service.mod_info(mod_names).each do |mod_data|
+  current_release = mod_data['releases'].max_by{|r| Gem::Version.new r['version']}
+  puts "#{mod_data['name']} by #{mod_data['owner']} #{current_release['version']}"
+  mod_file = File.join(config[:mods_path], current_release['file_name'])
+  if File.exist? mod_file
+    puts "\tCurrent"
+  else
+    puts "\tInstalling"
+    delete_us = Dir.glob(File.join(config[:mods_path], "#{mod_data['name']}_*.zip"))
+    temp_file = mod_service.download(current_release['download_url'])
+    FileUtils.cp(temp_file, mod_file)
+    FileUtils.rm([temp_file, *delete_us])
+  end
+end
