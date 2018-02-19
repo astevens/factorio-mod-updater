@@ -47,6 +47,9 @@ OptionParser.new do |opts|
   opts.on("-m", "--mods-path PATH", "location of mods dir containing mod-list.json") do |o|
     options[:mods_path] = File.expand_path(o)
   end
+  opts.on("-d", "--dry-run", "dry run only, no install") do |o|
+    $dryrun = 1
+  end
   opts.on("-h", "--help", "Prints this help") do
     puts opts
     exit
@@ -80,10 +83,15 @@ mod_service.mod_info(mod_names).each do |mod_data|
   if File.exist? mod_file
     puts "\tCurrent"
   else
-    puts "\tInstalling"
-    delete_us = Dir.glob(File.join(config[:mods_path], "#{mod_data['name']}_*.zip"))
-    temp_file = mod_service.download(current_release['download_url'])
-    FileUtils.cp(temp_file, mod_file)
-    FileUtils.rm([temp_file, *delete_us])
+    if $dryrun == 1
+      puts "Dry run, not installing"
+      exit 2
+    else
+      puts "\tInstalling"
+      delete_us = Dir.glob(File.join(config[:mods_path], "#{mod_data['name']}_*.zip"))
+      temp_file = mod_service.download(current_release['download_url'])
+      FileUtils.cp(temp_file, mod_file)
+      FileUtils.rm([temp_file, *delete_us])
+    end
   end
 end
