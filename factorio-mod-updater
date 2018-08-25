@@ -2,6 +2,7 @@
 require 'optparse'
 require 'open-uri'
 require 'json'
+require 'tempfile'
 
 class ModService
   def initialize(username, token, server = "mods.factorio.com")
