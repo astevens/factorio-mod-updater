@@ -5,6 +5,8 @@ require 'json'
 
 class ModService
   def initialize(username, token, server = "mods.factorio.com")
+    raise "Missing factorio.com username!" if username.empty?
+    raise "Missing factorio.com token!" if token.empty?
     @username = username
     @token = token
     @server_base_uri = URI("https://#{server}")
